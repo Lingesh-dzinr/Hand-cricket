@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hand Cricket</title>
+<link rel="icon" href="data:,">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:#cfe9f5;font-family:"Zen Maru Gothic",sans-serif;color:#2d5a9c}
+  /* classroom backdrop, blurred so the hands stay the focus; inset past the edges so the blur has no soft border */
+  body::before{content:"";position:fixed;inset:-40px;z-index:-1;background:linear-gradient(#ffffff26,#ffffff26),url(assets/classroom.webp) center/cover;filter:blur(8px)}
+  /* hand size follows the canvas height, so keep a fixed 3:4 box that fits both phones and desktops */
+  canvas{position:absolute;left:50%;width:min(75vw,60dvh);aspect-ratio:3/4;display:block;pointer-events:none}
+  #rival{top:0;transform:translateX(-100%) rotate(180deg)}   /* landscape: the two boxes meet at the centre line, so hands never cross */
+  #you{bottom:0;transform:translateX(0)}
+  @media (orientation:portrait){
+    canvas{width:min(80vw,28.8dvh);aspect-ratio:3/5}   /* height = 48dvh: each hand keeps to its own half */
+    #rival{transform:translateX(-60%) rotate(180deg)} #you{transform:translateX(-40%)}
+  }
+  /* throw timer: white closes in from the top and bottom until the halves meet in the middle, then both hands throw */
+  .shade{position:absolute;left:0;right:0;height:0;background:#ffffffb3;pointer-events:none}
+  #shadeTop{top:0} #shadeBot{bottom:0}
+  body.timing .shade{animation:close 3s linear forwards}
+  @keyframes close{to{height:50%}}
+  #score{position:absolute;top:max(16px,env(safe-area-inset-top));right:max(20px,env(safe-area-inset-right));text-align:right;font-size:32px;line-height:1}
+  #score small{display:block;margin-top:6px;font-size:14px}
+  .mid{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+  .mid>*{pointer-events:auto;text-align:center;margin:0}
+  .mid p{margin:0 0 12px;font-size:22px}
+  #count,#call{font-size:64px;pointer-events:none}
+  button{font:700 18px "Zen Maru Gothic",sans-serif;color:#2d5a9c;min-width:48px;height:48px;padding:0 20px;border-radius:24px;margin:3px;
+    border:1.5px solid #ffffffd9;background:#ffffffb8;cursor:pointer;transition:transform .15s;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
+  @media (hover:hover){button:hover{transform:scale(1.05)}} button:active{transform:scale(.96)}
+  #nums{white-space:nowrap}
+  #nums button{padding:0;min-width:0;width:min(48px,11.5vw);height:min(48px,11.5vw);margin:2px}
+  #nums button.on{background:#2d5a9c;color:#fff}
+  #play{font-size:22px;letter-spacing:.12em;padding:0 40px;height:52px;border-radius:26px}
+  #sound{position:absolute;top:max(12px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));padding:0;width:44px;height:44px;margin:0;display:grid;place-items:center}
+  #sound svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  #sound .wave{display:none} #sound[aria-pressed="true"] .wave{display:inline} #sound[aria-pressed="true"] .mute{display:none}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="rival" aria-label="Rival's hand"></canvas>
+<canvas id="you" aria-label="Your hand"></canvas>
+<div class="shade" id="shadeTop"></div><div class="shade" id="shadeBot"></div>
+<div id="score" aria-live="polite" hidden><span id="runs">0</span><small id="scoreSub"></small></div>
+<button id="sound" aria-label="Classroom sound" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path class="wave" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/><path class="mute" d="M17 9l5 6M22 9l-5 6"/></svg></button>
+<div class="mid">
+  <button id="play">PLAY</button>
+  <div id="choose" hidden><p>Bat or bowl?</p><button data-bat="you">BAT</button><button data-bat="rival">BOWL</button></div>
+  <p id="count" hidden></p>
+  <div id="nums" role="group" aria-label="Your number" hidden></div>
+  <p id="call" aria-live="assertive" hidden></p>
+  <div id="result" hidden><p id="resultLine"></p><button id="again">PLAY AGAIN</button></div>
+</div>
+<script type="module">
+import { createHand } from './js/hand.js';
+import { setAmbience } from './js/ambience.js';
+// sound toggle: off until the player turns it on (browsers block audio before a tap); the choice is remembered
+const soundBtn = document.getElementById('sound');
+const setSound = on => { soundBtn.setAttribute('aria-pressed', on); setAmbience(on); try { localStorage.setItem('hc-sound', on ? '1' : '0'); } catch {} };
+soundBtn.onclick = () => setSound(soundBtn.getAttribute('aria-pressed') !== 'true');
+let wantSound = false; try { wantSound = localStorage.getItem('hc-sound') === '1'; } catch {}
+if (wantSound) addEventListener('pointerdown', e => !soundBtn.contains(e.target) && setSound(true), { once: true, capture: true });   // resume on the first tap
+const $ = id => document.getElementById(id);
+const [rival, you] = await Promise.all([createHand($('rival')), createHand($('you'))]);
+const wait = ms => new Promise(r => setTimeout(r, ms));
+const show = (...ids) => ['play', 'choose', 'count', 'nums', 'call', 'result'].forEach(id => ($(id).hidden = !ids.includes(id)));
+
+// number pad 0-6 (also keys 0-6); the last pick counts, none = 0
+let pick = null;
+for (let n = 0; n <= 6; n++) {
+  const b = document.createElement('button'); b.textContent = n; b.onclick = () => choose(n); $('nums').append(b);
+}
+function choose(n) {
+  if ($('nums').hidden) return;
+  pick = n;
+  [...$('nums').children].forEach((b, i) => b.classList.toggle('on', i === n));
+}
+addEventListener('keydown', e => { if (e.key >= '0' && e.key <= '6') choose(+e.key); });
+
+// match: one innings each, batting until out; the chase ends once the target is passed
+let batting, innings, runs, first;
+function board() {
+  $('score').hidden = false;
+  $('runs').textContent = runs;
+  $('scoreSub').textContent = (batting === 'you' ? 'You batting' : 'Rival batting') + (innings === 2 ? ` · Target ${first + 1}` : '');
+}
+const throwTimer = () => new Promise(r => {
+  const body = document.body;
+  body.classList.remove('timing'); void body.offsetWidth; body.classList.add('timing');
+  $('shadeBot').addEventListener('animationend', () => { body.classList.remove('timing'); r(); }, { once: true });
+});
+
+async function ball() {
+  pick = null; choose(-1); show('nums');
+  const pullIn = setTimeout(() => { you.pull(2); rival.pull(2); }, 1000);   // still for 1 s, then a slow 2 s pull; the throw follows the timer
+  await throwTimer();
+  clearTimeout(pullIn);
+  const p = pick ?? 0, r = Math.floor(Math.random() * 7);
+  show();
+  you.play(p); rival.play(r);
+  await wait(900);
+  const [bat, bowl] = batting === 'you' ? [p, r] : [r, p];
+  const out = bat === bowl;
+  if (!out) runs += bat;
+  board();
+  $('call').textContent = out ? 'OUT!' : `+${bat}`; show('call');
+  await wait(1400);
+  you.setPose(0); rival.setPose(0);
+  if (innings === 2 && runs > first) return end(batting);
+  if (!out) return ball();
+  if (innings === 2) return end(runs === first ? 'tie' : batting === 'you' ? 'rival' : 'you');
+  first = runs; runs = 0; innings = 2; batting = batting === 'you' ? 'rival' : 'you';
+  board();
+  $('call').textContent = `Target ${first + 1}`; show('call');
+  await wait(1600);
+  ball();
+}
+function end(winner) {
+  $('resultLine').textContent = winner === 'tie' ? "It's a tie" : winner === 'you' ? 'You win!' : 'Rival wins';
+  show('result');
+}
+async function start(side) {
+  batting = side; innings = 1; runs = 0; first = 0; board();
+  show('count');
+  for (const c of [3, 2, 1]) { $('count').textContent = c; await wait(1000); }
+  ball();
+}
+
+$('play').onclick = $('again').onclick = () => show('choose');
+document.querySelectorAll('[data-bat]').forEach(b => (b.onclick = () => start(b.dataset.bat)));
+</script>
+</body>
+</html>

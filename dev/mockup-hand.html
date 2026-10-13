@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hand mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap" rel="stylesheet">
+<style>
+  :root{ --sky-top:#b6e7f8; --sky-bottom:#d9f4fa; --ink:#3f6fb5; }
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:linear-gradient(var(--sky-top),var(--sky-bottom));font-family:"Zen Maru Gothic",sans-serif}
+  /* each hand lives in a full-screen layer; the rival's layer is the same thing turned 180deg */
+  .layer{position:absolute;inset:0;pointer-events:none}
+  .layer.rival{transform:rotate(180deg)}
+  .layer img{position:absolute;opacity:0;transition:opacity .45s ease,transform .6s cubic-bezier(.2,.8,.2,1);transform:scale(.97);transform-origin:50% 85%}
+  .layer img.on{opacity:1;transform:none}
+  .play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    font:700 22px/1 "Zen Maru Gothic",sans-serif;letter-spacing:.2em;color:var(--ink);
+    padding:16px 40px 16px 44px;border-radius:999px;border:1.5px solid #ffffffd9;cursor:pointer;
+    background:#ffffff8c;backdrop-filter:blur(6px);transition:transform .2s ease,background .2s ease}
+  .play:hover{background:#ffffffc0}
+  .play:active{transform:translate(-50%,-50%) scale(.96)}
+</style>
+</head>
+<body>
+<div class="layer rival" id="rival"></div>
+<div class="layer you" id="you"></div>
+<button class="play" id="play">PLAY</button>
+<script>
+  // image size, wrist centre x/y and wrist width, measured from each cut-out
+  const POSES = {
+    1: [203, 553, 111, 433, 102], 2: [197, 557, 109.5, 442, 101], 3: [218, 565, 124.5, 453, 103],
+    4: [282, 563, 172, 444, 106], 5: [708, 918, 344, 772, 194],   6: [281, 466, 82.5, 369, 111],
+  };
+
+  // wrist sits at 58% across and 0.62 x wrist width above the bottom edge of the layer
+  function place(img, n) {
+    const [W, H, cx, wy, ww] = POSES[n];
+    const wrist = Math.min(innerHeight * .09, innerWidth * .18);
+    const s = wrist / ww;
+    img.style.width = W * s + 'px';
+    img.style.left = `calc(58% - ${cx * s}px)`;
+    img.style.top = `calc(100% - ${wrist * .62 + wy * s}px)`;
+  }
+
+  function show(layer, n) {
+    const old = layer.querySelector('img.on');
+    const img = new Image();
+    img.src = `assets/hands/${n}.png`;
+    img.dataset.n = n;
+    place(img, n);
+    layer.append(img);
+    img.decode().then(() => requestAnimationFrame(() => {
+      img.classList.add('on');
+      if (old) { old.classList.remove('on'); setTimeout(() => old.remove(), 600); }
+    }));
+  }
+
+  const rival = document.getElementById('rival'), you = document.getElementById('you');
+  const pick = () => 1 + Math.floor(Math.random() * 6);
+  show(rival, 5); show(you, 5);
+  document.getElementById('play').onclick = () => { show(rival, pick()); show(you, pick()); };
+  addEventListener('resize', () => document.querySelectorAll('.layer img').forEach(i => place(i, i.dataset.n)));
+</script>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>3D hand prototype</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap" rel="stylesheet">
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:linear-gradient(#b6e7f8,#d9f4fa);font-family:"Zen Maru Gothic",sans-serif;color:#3f6fb5}
+  .stage{position:absolute;inset:0 0 72px;display:grid;grid-template-columns:1fr 1fr}
+  .cell{position:relative;display:grid;place-items:end center;overflow:hidden}
+  .cell span{position:absolute;top:12px;left:0;right:0;text-align:center;font-size:13px;letter-spacing:.15em;opacity:.7}
+  #ref{height:88%;object-fit:contain;object-position:bottom}
+  canvas{width:100%;height:100%;display:block}
+  .bar{position:absolute;left:0;right:0;bottom:0;height:72px;display:flex;gap:8px;justify-content:center;align-items:center}
+  .bar button{font:700 16px "Zen Maru Gothic",sans-serif;color:#3f6fb5;min-width:44px;height:44px;border-radius:22px;
+    border:1.5px solid #ffffffd9;background:#ffffff8c;cursor:pointer}
+  .bar button.wide{padding:0 18px}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="cell"><span>REFERENCE</span><img id="ref" src="assets/hands/5.png" alt="Reference pose"></div>
+  <div class="cell"><span>3D</span><canvas id="c"></canvas></div>
+</div>
+<div class="bar" id="bar"></div>
+
+<script type="module">
+// The hand itself lives in js/hand.js (shared with the game); this page adds the reference panel, sign buttons and overlay.
+import { createHand } from './js/hand.js';
+const canvas = document.getElementById('c');
+const hand = await createHand(canvas);
+const { setPose, play, springs, renderer, renderNow } = hand;
+
+// ---------- UI ----------
+const ref = document.getElementById('ref');
+const showRef = n => { const has = n > 0 && n < 6; if (has) ref.src = `assets/hands/${n}.png`; ref.style.visibility = has ? "visible" : "hidden"; };
+const bar = document.getElementById('bar');
+for (let n = 0; n <= 6; n++) {
+  const b = document.createElement('button'); b.textContent = n;
+  b.onclick = () => { setPose(n); showRef(n); };
+  bar.append(b);
+}
+const pb = document.createElement('button'); pb.className = 'wide'; pb.textContent = 'PLAY';
+pb.onclick = () => play(Math.floor(Math.random() * 7));
+bar.append(pb);
+addEventListener('keydown', e => {
+  if (e.key >= '0' && e.key <= '6') { setPose(+e.key); showRef(+e.key); }
+  if (e.key === 'o') toggleOverlay();
+});
+
+// ---------- same-scale overlay (comparison only) ----------
+// Lays the drawing for the current pose over the 3D hand at half opacity, lined up on the palm: the two outer
+// finger valleys of the drawing (inside its blue outline) are mapped onto the two outer valleys of the render.
+// Pose 5 lines up on the two outer finger valleys; other poses on the two sides of the hand's widest row.
+const ob = document.createElement('button'); ob.className = 'wide'; ob.textContent = 'OVERLAY';
+ob.onclick = () => toggleOverlay();
+bar.append(ob);
+const overlayImg = Object.assign(document.createElement('img'), { alt: 'Reference overlay' });
+overlayImg.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;opacity:.5;transform-origin:0 0;max-width:none;display:none';
+canvas.parentElement.append(overlayImg);
+let overlayOn = false, overlayPose = -1;
+
+function maskOf(src, W, H) {   // hand = what the outside can't reach without crossing the blue line or skin
+  const g = new OffscreenCanvas(W, H).getContext('2d'); g.drawImage(src, 0, 0, W, H);
+  const a = g.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H).fill(1), q = [];
+  const open = i => a[i * 4 + 3] < 128 || (a[i * 4] < 228 && !(a[i * 4] < 185 && a[i * 4 + 2] - a[i * 4] > 40));
+  for (let x = 0; x < W; x++) q.push(x, (H - 1) * W + x);
+  for (let y = 0; y < H; y++) q.push(y * W, y * W + W - 1);
+  while (q.length) {
+    const i = q.pop(); if (!m[i] || !open(i)) continue;
+    m[i] = 0; const x = i % W;
+    if (x > 0) q.push(i - 1); if (x < W - 1) q.push(i + 1); if (i >= W) q.push(i - W); if (i < W * (H - 1)) q.push(i + W);
+  }
+  return m;
+}
+function anchors(m, W, H, valleys) {   // two palm points: outer finger valleys (pose 5), else the sides of the widest row
+  const runs = y => { const r = []; let st = -1; for (let x = 0; x <= W; x++) { const on = x < W && m[y * W + x]; if (on && st < 0) st = x; if (!on && st >= 0) { if (x - st > 2) r.push([st, x - 1]); st = -1; } } return r; };
+  let r0 = 0; while (r0 < H && runs(r0).length !== 4) r0++;
+  if (valleys && r0 < H * 0.8) {
+    let prev = runs(r0 + 3); const v = [];
+    for (let y = r0 + 4; y < H * 0.9 && v.filter(Boolean).length < 3; y++) {
+      const rs = runs(y), mp = prev.map(q => rs.findIndex(r => r[0] <= q[1] && r[1] >= q[0]));
+      for (let i = 0; i < 3; i++) if (!v[i] && mp[i] >= 0 && mp[i] === mp[i + 1]) v[i] = [(prev[i][1] + prev[i + 1][0]) / 2, y];
+      prev.forEach((q, i) => { if (!v[i] && !v[i - 1] && mp[i] >= 0) prev[i] = rs[mp[i]]; });
+    }
+    if (v[0] && v[2]) return [v[0], v[2]];
+  }
+  // no four raised fingers: use the two sides of the hand's widest row (thumb-bump height), which both images share
+  let top = 0; while (top < H && !runs(top).length) top++;
+  let bot = H - 1; while (bot > top && !runs(bot).length) bot--;
+  let best = null; for (let y = top; y < top + (bot - top) * 0.65; y++) { const r = runs(y); if (r.length) { const w = r[r.length - 1][1] - r[0][0]; if (!best || w > best.w) best = { w, y, l: r[0][0], r: r[r.length - 1][1] }; } }
+  return [[best.l, best.y], [best.r, best.y]];
+}
+async function placeOverlay() {
+  const n = hand.pose(), has = n > 0 && n < 6;
+  overlayImg.style.display = has ? 'block' : 'none';
+  if (!has) return;
+  if (overlayPose !== n) { overlayImg.src = `assets/hands/${n}.png`; await overlayImg.decode(); overlayPose = n; }
+  renderNow();
+  const W = canvas.width, H = canvas.height, dpr = renderer.getPixelRatio();
+  const a3 = anchors(maskOf(canvas, W, H), W, H, n === 5);
+  const RW = overlayImg.naturalWidth, RH = overlayImg.naturalHeight, ar = anchors(maskOf(overlayImg, RW, RH), RW, RH, n === 5);
+  // similarity transform taking the drawing's anchors onto the render's (CSS pixels)
+  const d3 = [(a3[1][0] - a3[0][0]) / dpr, (a3[1][1] - a3[0][1]) / dpr], dr = [ar[1][0] - ar[0][0], ar[1][1] - ar[0][1]];
+  const k = Math.hypot(...d3) / Math.hypot(...dr), rot = Math.atan2(d3[1], d3[0]) - Math.atan2(dr[1], dr[0]);
+  const c = Math.cos(rot) * k, sn = Math.sin(rot) * k;
+  const tx = a3[0][0] / dpr - (c * ar[0][0] - sn * ar[0][1]), ty = a3[0][1] / dpr - (sn * ar[0][0] + c * ar[0][1]);
+  overlayImg.style.transform = `matrix(${c}, ${sn}, ${-sn}, ${c}, ${tx}, ${ty})`;
+}
+function toggleOverlay() {
+  overlayOn = !overlayOn; ob.style.background = overlayOn ? '#fff' : '';
+  if (!overlayOn) { overlayImg.style.display = 'none'; return; }
+  for (const sp of springs.values()) { sp.x = sp.to; sp.v = 0; sp.delay = 0; }   // compare the settled pose
+  placeOverlay();
+}
+addEventListener('resize', () => overlayOn && placeOverlay());
+
+setPose(5); showRef(5);
+for (const s of springs.values()) s.x = s.to;   // start settled
+// debug: __hand.thumb([side, up, palm, knuckle, tip]) snaps the thumb for tuning
+window.__hand = { renderNow, ...hand.debug };
+</script>
+</body>
+</html>

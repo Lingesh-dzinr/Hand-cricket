@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gameplay mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&display=swap" rel="stylesheet">
+<style>
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{background:linear-gradient(#b6e7f8,#d9f4fa);font-family:"Zen Maru Gothic",sans-serif;color:#3f6fb5}
+  .hand{position:absolute;width:70px;height:38vh;background:#fef2e0;border:1.5px solid #71a9df;border-radius:30px}
+  .rival{top:-30px;left:28%} .you{bottom:-30px;right:28%}
+  /* the overlay: top and bottom edges close toward the centre line over 5 s */
+  .shade{position:absolute;left:0;right:0;background:#3f6fb533}
+  .shade.top{top:0;height:0} .shade.bot{bottom:0;height:0}
+  body.run .shade{animation:close 5s linear forwards}
+  @keyframes close{to{height:50%}}
+  .score{position:absolute;top:16px;right:20px;text-align:right;font-size:28px}
+  .score small{display:block;font-size:13px;opacity:.7}
+  .mid{position:absolute;inset:0;display:grid;place-items:center;z-index:2}
+  .box{text-align:center} .box p{margin:0 0 12px;font-size:20px}
+  button{font:700 18px "Zen Maru Gothic";color:#3f6fb5;min-width:48px;height:48px;border-radius:24px;margin:3px;
+    border:1.5px solid #ffffffd9;background:#ffffffb0;cursor:pointer}
+  button.on{background:#3f6fb5;color:#fff}
+  .count{font-size:64px}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="hand rival"></div><div class="hand you"></div>
+<div class="shade top"></div><div class="shade bot"></div>
+<div class="score">24<small>Target 31 · You batting</small></div>
+<div class="mid">
+  <div class="box" id="choose"><p>Bat or bowl?</p><button onclick="go()">BAT</button><button onclick="go()">BOWL</button></div>
+  <div class="box count" id="count" hidden>3</div>
+  <div class="box" id="nums" hidden></div>
+</div>
+<script>
+  const nums = document.getElementById('nums');
+  for (let n = 0; n <= 6; n++) { const b = document.createElement('button'); b.textContent = n;
+    b.onclick = () => { nums.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on'); }; nums.append(b); }
+  function go() {
+    choose.hidden = true; count.hidden = false; let c = 3; count.textContent = c;
+    const t = setInterval(() => { if (--c) { count.textContent = c; return; } clearInterval(t); count.hidden = true; nums.hidden = false;
+      document.body.classList.add('run'); }, 1000);
+  }
+</script>
+</body>
+</html>

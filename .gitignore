@@ -1,0 +1,4 @@
+# old versions of the hand: kept on disk, too many near-duplicates for git
+dev/checkpoints/
+# local tool caches
+.impeccable/
