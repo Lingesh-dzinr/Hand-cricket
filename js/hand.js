@@ -578,7 +578,7 @@ function setPose(n) {
   const p = POSES[n]; currentPose = n;
   if (typeof overlayOn !== 'undefined' && overlayOn) setTimeout(() => { for (const sp of springs.values()) { sp.x = sp.to; sp.v = 0; sp.delay = 0; } placeOverlay(); }, 0);
   for (const f of [...FINGERS, 'thumb']) p[f].forEach((a, i) => {
-    const s = spring(`${f}${i}`, f === 'thumb' ? 450 : 520);   // all fingers together, so the reveal feels quick
+    const s = spring(`${f}${i}`, f === 'thumb' ? 850 : 1000);   // all fingers together, so the reveal feels quick
     s.to = a;
   });
   spring('roll', 120, 1).to = p.roll;
@@ -829,7 +829,7 @@ function frame(now) {
     prevA = a;
     pump.rotation.x = a;
     pump.position.set(0, 0.3 + ELBOW * (Math.cos(a) - 1), ELBOW * Math.sin(a));   // rotate about the elbow, not the wrist
-    if (queued !== null && !holding && u >= PULL + THROW * 0.45) { setPose(queued); queued = null; }
+    if (queued !== null && !holding && u >= PULL + THROW * 0.2) { setPose(queued); queued = null; }
   }
   applyPose();
   drawFrame();
