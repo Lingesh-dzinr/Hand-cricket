@@ -29,7 +29,7 @@
 
 <script type="module">
 // The hand itself lives in js/hand.js (shared with the game); this page adds the reference panel, sign buttons and overlay.
-import { createHand } from './js/hand.js';
+import { createHand } from '../js/hand.js';
 const canvas = document.getElementById('c');
 const hand = await createHand(canvas);
 const { setPose, play, springs, renderer, renderNow } = hand;

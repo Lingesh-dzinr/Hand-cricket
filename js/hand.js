@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 
-export async function createHand(canvas) {
+export async function createHand(canvas, { lean = 0, tilt = 0 } = {}) {   // lean: forearm off upright about the elbow, tilt: hand at the wrist (degrees, + = counter-clockwise)
 // Palette sampled from the reference sheet
 const SKIN = '#fef2e0', SHADE = '#cdd5f1', LINE = '#71a9df', LINE_PX = 1.3;
 
@@ -83,18 +83,21 @@ const skinMat = new THREE.ShaderMaterial({
       float wd = length(vV.xy - uWeb.xy);   // thumb-index web gets the same strip, fading out ~1.6 cm from the web floor
       float gapK = 0.0;   // weight of the gap this pixel sits in: within ~1.1 cm sideways of its floor, from just below it to 1.4 cm up
       for (int i = 0; i < 3; i++) if (abs(vV.x - uPock[i].x) < 0.011 && vV.y > uPock[i].y - 0.004 && vV.y < uPock[i].y + 0.014)
-        gapK = max(gapK, uPockK[i] * (1.0 - smoothstep(uPock[i].y + 0.006, uPock[i].y + 0.014, vV.y)));
+        gapK = max(gapK, uPockK[i] * (1.0 - smoothstep(uPock[i].y + 0.001, uPock[i].y + 0.014, vV.y)));
       float webK = uWebK * (1.0 - smoothstep(0.01, 0.016, wd));
       if (gapK > 0.0 || webK > 0.0) {
-        float dist = 99.0;
-        for (int r = 1; r <= 10; r++) {
-          float rr = float(r) * uLZ.z * 0.2;
-          for (int k = 0; k < 12; k++) {
-            vec2 o = vec2(cos(float(k) * 0.5236), sin(float(k) * 0.5236)) * rr;
+        // thinner than the back-edge strip, sampled finely (half-px steps, 24 directions) with a soft edge so the inner border runs smooth
+        float gw = uLZ.z * 0.7, dist = 99.0;
+        for (int r = 1; r <= 16; r++) {
+          float rr = float(r) * gw * 0.08;
+          for (int k = 0; k < 24; k++) {
+            vec2 o = vec2(cos(float(k) * 0.2618), sin(float(k) * 0.2618)) * rr;
             if (texture2D(uMask, (gl_FragCoord.xy + o) / uMaskRes).a < 0.5) dist = min(dist, rr);
           }
         }
-        t = min(t, mix(1.0, smoothstep(uLZ.z - 0.75, uLZ.z + 0.75, dist), max(gapK, webK)));
+        // taper: the strip narrows to nothing as it climbs the fingers instead of just fading
+        float kk = max(gapK, webK), w = gw * kk;
+        t = min(t, mix(1.0, smoothstep(w - 1.0, w + 1.0, dist), smoothstep(0.0, 0.3, kk)));
       }
       float extra = 0.0;
       { // thumb web V (from the Shadows sheet): two arms just inside the thumb and index edges, meeting in a point below the U.
@@ -543,7 +546,12 @@ const wristW = P('wrist');
 const armRig = new THREE.Group();        // rolls about the forearm (used by the thumbs-up)
 const pump = new THREE.Group();          // pivots at the elbow for the shake
 armRig.add(orient); orient.position.sub(wristW);
-pump.add(armRig); scene.add(pump);
+pump.add(armRig);
+const leanRig = new THREE.Group();       // pivots at the elbow: leans the whole forearm off upright
+leanRig.rotation.z = lean * Math.PI / 180; pump.position.y = 0.3;
+leanRig.position.set(0.3 * Math.sin(leanRig.rotation.z), -0.3 * Math.cos(leanRig.rotation.z), 0);   // elbow placed so the wrist stays where it was
+leanRig.add(pump); scene.add(leanRig);
+orient.rotation.z = tilt * Math.PI / 180;
 
 // ---------- poses ----------
 // fingers: [knuckle, middle joint, tip joint, spread toward pinky]; thumb: [aim toward thumb side, toward fingertips, toward palm, knuckle, tip]; roll of the forearm
@@ -782,15 +790,15 @@ function applyPose() {
 
 // ---------- motion ----------
 const idle = {};
-let pumpT = -1, queued = null, slow = 1, holding = false, from = 0;
-const PULL = 0.32, HOLD = 0.12, THROW = 0.14, ANGLE = 0.5, ELBOW = 0.3;   // seconds; radians of swing; metres wrist -> elbow
+let pumpT = -1, queued = null, slow = 1, holding = false, from = 0, v0 = 0, prevA = 0, swingV = 0;
+const PULL = 0.32, THROW = 0.2, SETTLE = 0.35, ANGLE = 0.5, ELBOW = 0.3;   // seconds; radians of swing; metres wrist -> elbow
 function pull(sec) {             // curl the forearm up toward the viewer over sec seconds and hold it there until play()
   setPose(0); pumpT = 0; queued = null; slow = sec / PULL; holding = true;
 }
-function play(n) {               // throw back down and open into n: from the held pull if there is one, else a full quick curl
-  if (holding) { from = pump.rotation.x; pumpT = PULL + HOLD; holding = false; }
-  else { setPose(0); pumpT = 0; from = ANGLE; }
-  queued = n; slow = 1;
+function play(n) {               // throw straight out of the current motion (no stop at the top) and open into n on the way down
+  if (holding) { from = pump.rotation.x; v0 = Math.max(0, swingV); }
+  else { setPose(0); from = ANGLE; v0 = 0; }
+  pumpT = PULL; holding = false; queued = n; slow = 1;
 }
 
 let last = performance.now();
@@ -806,19 +814,25 @@ function frame(now) {
   for (const [i, f] of FINGERS.entries()) idle[`${f}0`] = Math.sin(t * 1.3 + i * 0.6) * 1.5;
   pump.rotation.z = Math.sin(t * 0.8) * 0.012;
   if (pumpT >= 0) {
-    if (!(holding && pumpT >= PULL)) pumpT += dt / slow;
-    // curl: the elbow stays planted below the frame and the forearm swings up about it, so only the wrist and
-    // fist come toward the viewer; hold a beat, then throw back down and open into the sign as it lands
-    const u = pumpT, ease = k => k * k * (3 - 2 * k);
+    if (!(holding && pumpT >= PULL * 1.15)) pumpT += dt / slow;
+    // curl: the elbow stays planted below the frame and the forearm swings up about it, so only the wrist and fist come toward
+    // the viewer. The wind-up is still rising when the throw starts, so the throw carries on from that motion: a Hermite curve
+    // from the current angle and speed down through upright, a small damped follow-through, and the sign opens mid-swing.
+    const u = pumpT, ease = k => k * k * (3 - 2 * k), vL = -2.2 * from / THROW;   // arrives fast, as if flung
     let a;
-    if (u < PULL) a = ANGLE * ease(Math.min(1, u / PULL));
-    else if (u < PULL + HOLD) a = ANGLE;
-    else if (u < PULL + HOLD + THROW) a = from * (1 - ((u - PULL - HOLD) / THROW) ** 2);   // accelerates into the throw
-    else { a = 0; pumpT = -1; }
-    if (holding && u >= PULL) a = ANGLE;
+    if (holding) a = ANGLE * ease(Math.min(1, u / (PULL * 1.15)));   // reaches the top a beat after the throw normally starts
+    else if (u < PULL + THROW) {
+      const k = (u - PULL) / THROW;
+      a = (2 * k ** 3 - 3 * k * k + 1) * from + (k ** 3 - 2 * k * k + k) * THROW * v0 + (k ** 3 - k * k) * THROW * vL;
+    } else if (u < PULL + THROW + SETTLE) {
+      const tau = u - PULL - THROW, w = 2 * Math.PI / 0.3;
+      a = (vL / w) * Math.sin(w * tau) * Math.exp(-tau / 0.07);         // dips just past upright and settles
+    } else { a = 0; pumpT = -1; }
+    if (dt > 0) swingV = (a - prevA) / dt;
+    prevA = a;
     pump.rotation.x = a;
-    pump.position.set(0, ELBOW * (Math.cos(a) - 1), ELBOW * Math.sin(a));   // rotate about the elbow, not the wrist
-    if (queued !== null && u >= PULL + HOLD + THROW) { setPose(queued); queued = null; }
+    pump.position.set(0, 0.3 + ELBOW * (Math.cos(a) - 1), ELBOW * Math.sin(a));   // rotate about the elbow, not the wrist
+    if (queued !== null && !holding && u >= PULL + THROW * 0.45) { setPose(queued); queued = null; }
   }
   applyPose();
   drawFrame();

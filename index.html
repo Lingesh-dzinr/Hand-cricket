@@ -17,7 +17,7 @@
   #rival{top:0;transform:translateX(-100%) rotate(180deg)}   /* landscape: the two boxes meet at the centre line, so hands never cross */
   #you{bottom:0;transform:translateX(0)}
   @media (orientation:portrait){
-    canvas{width:min(80vw,28.8dvh);aspect-ratio:3/5}   /* height = 48dvh: each hand keeps to its own half */
+    canvas{width:min(80vw,36dvh);aspect-ratio:3/4}   /* height = 48dvh: each hand keeps to its own half; 3:4 leaves room for the leaning hand's spread thumb */
     #rival{transform:translateX(-60%) rotate(180deg)} #you{transform:translateX(-40%)}
   }
   /* throw timer: white closes in from the top and bottom until the halves meet in the middle, then both hands throw */
@@ -68,7 +68,8 @@ soundBtn.onclick = () => setSound(soundBtn.getAttribute('aria-pressed') !== 'tru
 let wantSound = false; try { wantSound = localStorage.getItem('hc-sound') === '1'; } catch {}
 if (wantSound) addEventListener('pointerdown', e => !soundBtn.contains(e.target) && setSound(true), { once: true, capture: true });   // resume on the first tap
 const $ = id => document.getElementById(id);
-const [rival, you] = await Promise.all([createHand($('rival')), createHand($('you'))]);
+const HAND_ANGLE = { lean: 15, tilt: -5 };   // forearm at 105° (15° left of upright), hand tipped 5° right at the wrist
+const [rival, you] = await Promise.all([createHand($('rival'), HAND_ANGLE), createHand($('you'), HAND_ANGLE)]);
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const show = (...ids) => ['play', 'choose', 'count', 'nums', 'call', 'result'].forEach(id => ($(id).hidden = !ids.includes(id)));
 
