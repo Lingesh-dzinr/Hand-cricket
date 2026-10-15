@@ -569,7 +569,7 @@ const POSES = {
 
 // every animated number is a little spring, so poses can be interrupted mid-move and still look natural
 const springs = new Map();
-function spring(key, k = 210, zeta = 0.72) {
+function spring(key, k = 300, zeta = 1) {   // critically damped: quick, no overshoot or wobble
   if (!springs.has(key)) springs.set(key, { x: 0, v: 0, to: 0, k, c: 2 * Math.sqrt(k) * zeta, delay: 0 });
   return springs.get(key);
 }
@@ -578,12 +578,12 @@ function setPose(n) {
   const p = POSES[n]; currentPose = n;
   if (typeof overlayOn !== 'undefined' && overlayOn) setTimeout(() => { for (const sp of springs.values()) { sp.x = sp.to; sp.v = 0; sp.delay = 0; } placeOverlay(); }, 0);
   for (const f of [...FINGERS, 'thumb']) p[f].forEach((a, i) => {
-    const s = spring(`${f}${i}`, f === 'thumb' ? 190 : 230);   // all fingers together, so the reveal feels quick
+    const s = spring(`${f}${i}`, f === 'thumb' ? 270 : 320);   // all fingers together, so the reveal feels quick
     s.to = a;
   });
-  spring('roll', 120, 0.85).to = p.roll;
-  spring('shape5', 200, 0.9).to = n === 5 ? 1 : 0;
-  spring('thumb6', 200, 0.9).to = n === 6 ? 1 : 0;
+  spring('roll', 120, 1).to = p.roll;
+  spring('shape5', 200, 1).to = n === 5 ? 1 : 0;
+  spring('thumb6', 200, 1).to = n === 6 ? 1 : 0;
 }
 
 // ---------- pose 5 faint details (assets/ref/5-outline.png) ----------
@@ -791,7 +791,7 @@ function applyPose() {
 // ---------- motion ----------
 const idle = {};
 let pumpT = -1, queued = null, slow = 1, holding = false, from = 0, v0 = 0, prevA = 0, swingV = 0;
-const PULL = 0.32, THROW = 0.2, SETTLE = 0.35, ANGLE = 0.5, ELBOW = 0.3;   // seconds; radians of swing; metres wrist -> elbow
+const PULL = 0.32, THROW = 0.15, ANGLE = 0.5, ELBOW = 0.3;   // seconds; radians of swing; metres wrist -> elbow
 function pull(sec) {             // curl the forearm up toward the viewer over sec seconds and hold it there until play()
   setPose(0); pumpT = 0; queued = null; slow = sec / PULL; holding = true;
 }
@@ -817,16 +817,13 @@ function frame(now) {
     if (!(holding && pumpT >= PULL * 1.15)) pumpT += dt / slow;
     // curl: the elbow stays planted below the frame and the forearm swings up about it, so only the wrist and fist come toward
     // the viewer. The wind-up is still rising when the throw starts, so the throw carries on from that motion: a Hermite curve
-    // from the current angle and speed down through upright, a small damped follow-through, and the sign opens mid-swing.
-    const u = pumpT, ease = k => k * k * (3 - 2 * k), vL = -1.6 * from / THROW;   // arrives fast, as if flung
+    // from the current angle and speed down to upright, and the sign opens mid-swing.
+    const u = pumpT, ease = k => k * k * (3 - 2 * k);
     let a;
     if (holding) a = ANGLE * ease(Math.min(1, u / (PULL * 1.15)));   // reaches the top a beat after the throw normally starts
     else if (u < PULL + THROW) {
       const k = (u - PULL) / THROW;
-      a = (2 * k ** 3 - 3 * k * k + 1) * from + (k ** 3 - 2 * k * k + k) * THROW * v0 + (k ** 3 - k * k) * THROW * vL;
-    } else if (u < PULL + THROW + SETTLE) {
-      const tau = u - PULL - THROW;
-      a = vL * tau * Math.exp(-tau / 0.035);         // dips a touch past upright and eases back, no rebound
+      a = (2 * k ** 3 - 3 * k * k + 1) * from + (k ** 3 - 2 * k * k + k) * THROW * v0;   // lands on upright with no speed left: no overshoot, no spring
     } else { a = 0; pumpT = -1; }
     if (dt > 0) swingV = (a - prevA) / dt;
     prevA = a;
