@@ -818,15 +818,15 @@ function frame(now) {
     // curl: the elbow stays planted below the frame and the forearm swings up about it, so only the wrist and fist come toward
     // the viewer. The wind-up is still rising when the throw starts, so the throw carries on from that motion: a Hermite curve
     // from the current angle and speed down through upright, a small damped follow-through, and the sign opens mid-swing.
-    const u = pumpT, ease = k => k * k * (3 - 2 * k), vL = -2.2 * from / THROW;   // arrives fast, as if flung
+    const u = pumpT, ease = k => k * k * (3 - 2 * k), vL = -1.6 * from / THROW;   // arrives fast, as if flung
     let a;
     if (holding) a = ANGLE * ease(Math.min(1, u / (PULL * 1.15)));   // reaches the top a beat after the throw normally starts
     else if (u < PULL + THROW) {
       const k = (u - PULL) / THROW;
       a = (2 * k ** 3 - 3 * k * k + 1) * from + (k ** 3 - 2 * k * k + k) * THROW * v0 + (k ** 3 - k * k) * THROW * vL;
     } else if (u < PULL + THROW + SETTLE) {
-      const tau = u - PULL - THROW, w = 2 * Math.PI / 0.3;
-      a = (vL / w) * Math.sin(w * tau) * Math.exp(-tau / 0.07);         // dips just past upright and settles
+      const tau = u - PULL - THROW;
+      a = vL * tau * Math.exp(-tau / 0.035);         // dips a touch past upright and eases back, no rebound
     } else { a = 0; pumpT = -1; }
     if (dt > 0) swingV = (a - prevA) / dt;
     prevA = a;
