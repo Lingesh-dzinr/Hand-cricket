@@ -578,7 +578,7 @@ function setPose(n) {
   const p = POSES[n]; currentPose = n;
   if (typeof overlayOn !== 'undefined' && overlayOn) setTimeout(() => { for (const sp of springs.values()) { sp.x = sp.to; sp.v = 0; sp.delay = 0; } placeOverlay(); }, 0);
   for (const f of [...FINGERS, 'thumb']) p[f].forEach((a, i) => {
-    const s = spring(`${f}${i}`, f === 'thumb' ? 270 : 320);   // all fingers together, so the reveal feels quick
+    const s = spring(`${f}${i}`, f === 'thumb' ? 450 : 520);   // all fingers together, so the reveal feels quick
     s.to = a;
   });
   spring('roll', 120, 1).to = p.roll;
@@ -791,7 +791,7 @@ function applyPose() {
 // ---------- motion ----------
 const idle = {};
 let pumpT = -1, queued = null, slow = 1, holding = false, from = 0, v0 = 0, prevA = 0, swingV = 0;
-const PULL = 0.32, THROW = 0.15, ANGLE = 0.5, ELBOW = 0.3;   // seconds; radians of swing; metres wrist -> elbow
+const PULL = 0.32, THROW = 0.11, ANGLE = 0.5, ELBOW = 0.3;   // seconds; radians of swing; metres wrist -> elbow
 function pull(sec) {             // curl the forearm up toward the viewer over sec seconds and hold it there until play()
   setPose(0); pumpT = 0; queued = null; slow = sec / PULL; holding = true;
 }
