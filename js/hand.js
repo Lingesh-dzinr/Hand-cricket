@@ -578,7 +578,7 @@ function setPose(n) {
   const p = POSES[n]; currentPose = n;
   if (typeof overlayOn !== 'undefined' && overlayOn) setTimeout(() => { for (const sp of springs.values()) { sp.x = sp.to; sp.v = 0; sp.delay = 0; } placeOverlay(); }, 0);
   for (const f of [...FINGERS, 'thumb']) p[f].forEach((a, i) => {
-    const s = spring(`${f}${i}`, f === 'thumb' ? 850 : 1000);   // all fingers together, so the reveal feels quick
+    const s = spring(`${f}${i}`, f === 'thumb' ? 1800 : 2200);   // all fingers together, so the reveal feels quick
     s.to = a;
   });
   spring('roll', 120, 1).to = p.roll;
@@ -807,8 +807,8 @@ function frame(now) {
   const t = now / 1000;
   for (const s of springs.values()) {
     if (s.delay > 0) { s.delay -= dt; continue; }
-    s.v += (s.k * (s.to - s.x) - s.c * s.v) * dt;
-    s.x += s.v * dt;
+    const n = Math.ceil(dt / 0.004), h = dt / n;   // small sub-steps keep the stiff finger springs stable at any frame rate
+    for (let i = 0; i < n; i++) { s.v += (s.k * (s.to - s.x) - s.c * s.v) * h; s.x += s.v * h; }
   }
   // breathing: knuckles drift a couple of degrees, the arm sways
   for (const [i, f] of FINGERS.entries()) idle[`${f}0`] = Math.sin(t * 1.3 + i * 0.6) * 1.5;
@@ -829,7 +829,7 @@ function frame(now) {
     prevA = a;
     pump.rotation.x = a;
     pump.position.set(0, 0.3 + ELBOW * (Math.cos(a) - 1), ELBOW * Math.sin(a));   // rotate about the elbow, not the wrist
-    if (queued !== null && !holding && u >= PULL + THROW * 0.2) { setPose(queued); queued = null; }
+    if (queued !== null && !holding && u >= PULL) { setPose(queued); queued = null; }
   }
   applyPose();
   drawFrame();
